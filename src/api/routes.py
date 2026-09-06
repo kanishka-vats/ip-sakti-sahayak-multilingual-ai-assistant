@@ -195,7 +195,7 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
                 "index": idx, "chunk_id": p["chunk_id"], "act_name": p["act_name"],
                 "section": p["section"], "doc_type": p["doc_type"],
                 "source_file": p["source_file"], "confidence": p["confidence"],
-                "quote": p["quote"], "jurisdiction": m,
+                "quote": p["quote"], "excerpt": p["excerpt"], "jurisdiction": m,
                 "source_label": clean_label(p["act_name"], p["source_file"]),
                 "verify_url": vurl, "verify_label": vlabel,
             })
@@ -215,9 +215,10 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
     gen = Generator()
     if gate.abstain:
         near_miss = top_score >= CLARIFY_FLOOR and overlap >= 0.1
-        if near_miss and is_confirm:
-            # User confirmed the interpretation: best-effort grounded answer
-            # from the retrieved provisions (zero extrapolation).
+        if is_confirm and citations:
+            # User confirmed the interpretation: ALWAYS answer best-effort from
+            # the retrieved provisions (zero extrapolation) — never loop back
+            # into another clarification once they said yes.
             answer = (
                 "Proceeding with my best reading of your question — "
                 "tell me which track you mean if I got it wrong.\n\n"
@@ -253,7 +254,7 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
 
     excerpts = [{
         "act_name": c["act_name"], "section": c["section"],
-        "source_file": c["source_file"], "text": c["quote"],
+        "source_file": c["source_file"], "text": c["excerpt"],
     } for c in citations]
     frame = jurisdiction_frame(jurisdiction)
     display_query = q_eff if retrieval_query.startswith(q_eff) else (

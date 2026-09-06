@@ -17,10 +17,19 @@ uv run uvicorn src.api.main:app --port 8000
    Greetings get a personal reply; off-topic chatter is declined.
 2. **Ask**, then ask follow-ups (`explain it`, `tell me more`) — the previous turn is sent as context.
 3. **Edit any query** via the pencil on its bubble — resending branches the chat (later turns are dropped).
-4. **Read citations**: click `[^1]`-style pills → source excerpt + act + section + confidence + official verify link.
-5. **Watch badges**: ABS (BD Act Sec 3/4/6) and TKDL prior-art cautions appear under answers.
-6. Sessions persist in the browser; rate answers with 👍/👎 (stored via `/api/feedback`).
-7. Small print below the query box: *Information only; not legal advice.*
+4. **Vague questions** get a clarification with a `Yes, proceed` chip — confirming
+   answers best-effort from the retrieved provisions.
+5. **Read citations**: click `[^1]`-style pills → source excerpt + act + section + confidence + official verify link.
+6. **Watch badges**: ABS (BD Act Sec 3/4/6) and TKDL prior-art cautions appear under answers.
+7. Sessions persist in the browser; rate answers with 👍/👎 (stored via `/api/feedback`).
+8. Small print below the query box: *Information only; not legal advice.*
+
+## Troubleshooting
+- **Blank answers / HTTP 500 / odd behavior after an update**: restart the backend
+  (`Ctrl+C`, then `uv run uvicorn src.api.main:app --port 8000`) and hard-refresh
+  the browser (`Ctrl+Shift+R`) — the old server or cached JS is almost always the cause.
+- **Repeated failures**: read the uvicorn terminal traceback; the UI now tells
+  backend-down apart from backend-error. Transient drops retry once automatically.
 
 ## Endpoints
 | Method | Path | Purpose |

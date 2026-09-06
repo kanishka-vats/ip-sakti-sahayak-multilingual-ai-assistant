@@ -8,7 +8,6 @@ const MAX_SESSIONS = 25;
 
 let jurisdiction = "auto";
 let sending = false;
-let pinned = true; // follow streaming output while user stays near bottom
 let store = { sessions: [], activeId: null };
 let lastCitations = [];
 let shareTurn = null;
@@ -183,7 +182,6 @@ function loadSession(id) {
   updateLastMetric();
   renderHistory();
   thread.scrollTop = 0;
-  pinned = thread.scrollHeight <= thread.clientHeight + 120;
   maybeCloseDrawer();
 }
 
@@ -503,13 +501,7 @@ function updateLastMetric() {
   } catch { /* metrics must never break chat */ }
 }
 
-/* ---------------- send flow (pinned scrolling) ---------------- */
-function watchScroll() {
-  const th = $("#thread");
-  th.addEventListener("scroll", () => {
-    pinned = th.scrollHeight - th.scrollTop - th.clientHeight < 140;
-  });
-}
+/* ---------------- send flow ---------------- */
 
 async function send(text) {
   const q = (text ?? $("#q").value).trim();
@@ -539,7 +531,6 @@ async function send(text) {
   lucide.createIcons();
   bindEdit(d, sess.id, idx);
   // Start at the QUESTION, not the end: user reads top-down.
-  pinned = false;
   d.scrollIntoView({ block: "start" });
   await runTurn(sess, idx, q, d);
 }
@@ -553,7 +544,6 @@ async function runTurn(sess, idx, q, d) {
 
   const paint = (md) => {
     renderBody(d, md);
-    if (pinned) $("#thread").scrollTop = $("#thread").scrollHeight;
   };
 
   try {
@@ -620,10 +610,24 @@ async function runTurn(sess, idx, q, d) {
       <div class="bar"><i style="width:${Math.round((turn.conf ?? 0) * 100)}%"></i></div>`;
     renderSources(turn.cites);
     updateLastMetric();
-    pinned = true;
+    // End where the user reads: top of this answer, never the bottom.
+    d.scrollIntoView({ block: "start" });
   } catch (err) {
-    bodyEl.innerHTML = `<b>Request failed.</b> Is the backend running?
-      <code>uv run uvicorn src.api.main:app --port 8000</code><br>${escapeHtml(err)}`;
+    const isNet = err instanceof TypeError;
+    if (isNet && !d.dataset.retried) {
+      // Transient connection drop (e.g. server restarting): one auto-retry.
+      d.dataset.retried = "1";
+      bodyEl.innerHTML = '<span class="typing">Connection hiccup — retrying…</span>';
+      await new Promise((r) => setTimeout(r, 1500));
+      return runTurn(sess, idx, q, d);
+    }
+    bodyEl.innerHTML = isNet
+      ? `<b>Backend unreachable.</b> Start it with
+         <code>uv run uvicorn src.api.main:app --port 8000</code>, then hard-refresh
+         (Ctrl+Shift+R) after pulling new code.<br>${escapeHtml(err)}`
+      : `<b>Backend error.</b> Check the uvicorn terminal for the traceback,
+         then restart the server.<br>${escapeHtml(err)}`;
+    d.scrollIntoView({ block: "start" });
   } finally {
     sending = false;
     $("#send").disabled = false;
@@ -739,7 +743,6 @@ loadStore();
 setProfile();
 setupMic();
 refreshTelemetry();
-watchScroll();
 lucide.createIcons();
 $("#composer-slot-landing").appendChild(composer());
 composer().classList.remove("hidden");
