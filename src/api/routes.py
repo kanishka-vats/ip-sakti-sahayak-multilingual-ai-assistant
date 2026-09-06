@@ -25,8 +25,9 @@ from src.core.retriever import Retriever
 from src.core.vector_store import VectorStore
 from src.services.abs_compliance import analyze_abs
 from src.services.citation_links import clean_label, verify_link
+from src.services.greetings import greeting_for, is_greeting
 from src.services.jurisdiction_router import jurisdiction_frame, route_jurisdiction
-from src.services.scope_gate import OUT_OF_SCOPE_MESSAGE, check_scope
+from src.services.scope_gate import OUT_OF_SCOPE_MESSAGE, check_scope, lexicon_hit
 from src.services.tkdl_checker import check_tkdl
 from src.services.typo_fixer import correct_typos, correction_note
 
@@ -113,6 +114,25 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
     s = get_settings()
     t0 = time.perf_counter()
     ctx_q = (req.context_query or "").strip()
+    # -1. Pure greetings get warmth + a name, never the scope refusal —
+    # but only when there is no legal substance (lexicon decides that).
+    if is_greeting(req.query) and not lexicon_hit(req.query, ctx_q):
+        latency_ms = (time.perf_counter() - t0) * 1000
+        store = VectorStore(s.db_path_abs)
+        store.init()
+        store.log_query(req.query, req.jurisdiction, s.llm_model, 1.0, 1.0,
+                        False, latency_ms)
+        return {
+            "answer": greeting_for(req.username),
+            "citations": [], "confidence": 1.0,
+            "top_score": 1.0, "jurisdiction": req.jurisdiction,
+            "abstained": False, "abs_flag": None, "tkdl_flag": None,
+            "model": s.llm_model,
+            "escalation_hint": None,
+            "suggestions": ["What is TKDL?",
+                            "What does Section 3(d) of the Patents Act bar?"],
+            "clarification": False,
+        }
     # 0. Typo empathy: correct legal-term typos ("tdkl" -> "TKDL") for all
     # downstream steps; the correction is always disclosed in the answer.
     fixed_query, corrections = correct_typos(req.query.strip())

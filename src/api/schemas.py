@@ -16,6 +16,8 @@ class QueryRequest(BaseModel):
     # terse follow-ups ("explain it", "tell me more") resolve correctly.
     context_query: str | None = Field(default=None, max_length=2000)
     context_answer: str | None = Field(default=None, max_length=4000)
+    # Browser-local display name for personalizing greetings (no auth).
+    username: str | None = Field(default=None, max_length=30)
 
 
 class Citation(BaseModel):

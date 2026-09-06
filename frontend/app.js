@@ -564,6 +564,7 @@ async function runTurn(sess, idx, q, d) {
         query: q, jurisdiction,
         context_query: prev ? prev.q : null,
         context_answer: prev ? stripMd(prev.md) : null,
+        username: localStorage.getItem(LS_PROFILE) || null,
       }),
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);

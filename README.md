@@ -14,6 +14,7 @@ uv run uvicorn src.api.main:app --port 8000
 
 ## How to use
 1. **Just chat** — jurisdiction is auto-routed server-side (India / International / Dual).
+   Greetings get a personal reply; off-topic chatter is declined.
 2. **Ask**, then ask follow-ups (`explain it`, `tell me more`) — the previous turn is sent as context.
 3. **Edit any query** via the pencil on its bubble — resending branches the chat (later turns are dropped).
 4. **Read citations**: click `[^1]`-style pills → source excerpt + act + section + confidence + official verify link.

@@ -9,7 +9,9 @@
 3. **Strict citation grounding.** Every factual legal claim in an answer must carry an
    inline bracketed reference `[^N]` that maps 1:1 to a retrieved chunk id.
    Format for human-readable fallback: `[Source: <DocName>, Sec. <X>]`.
-4. **Zero extrapolation + empathy.** Typo fixer (`typo_fixer.py`) corrects legal-term
+4. **Zero extrapolation + empathy.** Greetings (no legal substance) get a warm
+   time-aware reply with the user's name (`greetings.py`), never a refusal.
+   Typo fixer (`typo_fixer.py`) corrects legal-term
    typos transposition-aware ("tdkl" → TKDL) and always discloses the correction.
    Scope gate (`scope_gate.py`) runs before any retrieval: lexicon fast-path, LLM
    verifier on misses, out-of-scope queries get a scope refusal with zero citations.
