@@ -64,3 +64,6 @@ desktop.ini
 *.bak
 tmp/
 temp/
+
+# =========== Evaluation run artifacts ==========
+eval/results_*.json
