@@ -21,9 +21,14 @@ STRICT RULES:
 1. Answer ONLY from the provided context excerpts. Zero extrapolation outside them.
 2. Every factual legal claim MUST end with an inline bracketed citation [^N] where N
    is the 1-based index of the excerpt used. If no excerpt supports a claim, omit it.
+   For procedures and multi-step processes, EVERY step ends with its own [^N].
+   Write steps exactly like this example:
+     - File Form 1 with the provisional specification [^2].
+     - Respond to the First Examination Report within 6 months [^3].
 3. Be thorough: cover every relevant excerpt, use Markdown headings, bullets, and a
    comparison table when excerpts span jurisdictions. Follow-up questions ("explain
    it", "more detail") demand a full detailed explanation, not a summary.
+   A correct answer NEVER contains zero citations when excerpts are provided.
 4. If context is insufficient, output exactly: INSUFFICIENT_BASIS and nothing else.
 5. Never invent section numbers, case names, or treaty articles.
 6. Comply with India's DPDP Act: never request or repeat personal data.
@@ -32,6 +37,29 @@ STRICT RULES:
    or reasoning traces.
 /no_think
 """
+
+REF_PAT = None  # compiled lazily in count_refs to keep import light
+
+
+def count_refs(text: str) -> int:
+    """Number of distinct inline [^N] citations in a draft answer."""
+    global REF_PAT
+    if REF_PAT is None:
+        import re as _re
+        REF_PAT = _re.compile(r"\[\^(\d+)\]")
+    return len(set(REF_PAT.findall(text or "")))
+
+
+REWRITE_INSTRUCTION = (
+    "Your draft above contains ZERO inline [^N] citations, which violates rule 2. "
+    "Rewrite the same answer now with these constraints:\n"
+    "- Put one [^N] citation at the end of EVERY bullet, step, and factual sentence, "
+    "using only excerpt numbers 1..{n}.\n"
+    "- For multi-step procedures, every numbered step ends with its citation, e.g.:\n"
+    "  - File Form 1 with the provisional specification [^2].\n"
+    "  - Respond to the First Examination Report within 6 months [^3].\n"
+    "- Do not add facts absent from the excerpts. Under 600 words. No <think> tags."
+)
 
 
 def build_messages(query: str, excerpts: list[dict[str, Any]], jurisdiction: str,
@@ -117,10 +145,32 @@ class Generator:
                         resp2 = await self._chat(client, m, retry, stream=False)
                         raw2 = resp2.json()["choices"][0]["message"]["content"] or ""
                         clean = strip_thinking(raw2)
-                    if clean:
+                    if not clean:
+                        last = RuntimeError(f"empty answer from {m}")
+                        continue
+                    if "INSUFFICIENT_BASIS" in clean or not excerpts:
                         return clean
-                    last = RuntimeError(f"empty answer from {m}")
-                    continue
+                    if count_refs(clean) == 0:
+                        # Citation-compliance retry: procedural/multi-step drafts
+                        # sometimes synthesize uncited prose. Demand a rewrite
+                        # with per-step [^N] markers on the SAME model.
+                        print(f"[generator] no citations from {m}; rewrite retry.")
+                        rewrite_msgs = [
+                            messages[0], messages[1],
+                            {"role": "assistant", "content": clean[:1500]},
+                            {"role": "user", "content":
+                             REWRITE_INSTRUCTION.format(n=len(excerpts))},
+                        ]
+                        resp3 = await self._chat(client, m, rewrite_msgs, stream=False)
+                        raw3 = resp3.json()["choices"][0]["message"]["content"] or ""
+                        clean3 = strip_thinking(raw3)
+                        if clean3 and "INSUFFICIENT_BASIS" in clean3:
+                            return clean3
+                        if count_refs(clean3) > 0:
+                            return clean3
+                        last = RuntimeError(f"uncited answer from {m} after rewrite")
+                        continue
+                    return clean
                 except Exception as exc:
                     last = exc
                     continue

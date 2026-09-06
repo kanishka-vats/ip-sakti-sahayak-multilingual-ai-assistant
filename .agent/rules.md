@@ -9,6 +9,9 @@
 3. **Strict citation grounding.** Every factual legal claim in an answer must carry an
    inline bracketed reference `[^N]` that maps 1:1 to a retrieved chunk id.
    Format for human-readable fallback: `[Source: <DocName>, Sec. <X>]`.
+   Procedural answers cite EVERY step. `Generator.complete()` enforces this: a draft
+   with zero refs triggers one same-model rewrite demanding per-step citations;
+   persistent failure falls through to the (always-cited) extractive fallback.
 4. **Zero extrapolation + empathy.** Greetings (no legal substance) get a warm
    time-aware reply with the user's name (`greetings.py`), never a refusal.
    Typo fixer (`typo_fixer.py`) corrects legal-term
