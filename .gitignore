@@ -1,0 +1,66 @@
+# ============ Python ============
+__pycache__/
+*.py[oc]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ============ Virtual environments / package managers ============
+.venv/
+venv/
+ENV/
+node_modules/
+
+# ============ Secrets & local env (NEVER commit keys) ============
+.env
+.env.*
+!.env.example
+
+# ============ SQLite / Turso journals (never commit lock files) ============
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+
+# NOTE: db/sih-projdb.db (pre-ingested corpus) IS tracked intentionally so the
+# demo runs without re-ingesting. Rebuild it any time via POST /api/ingest.
+# NOTE: raw_data/ (legal corpus PDFs) IS tracked intentionally — it is the
+# evidence base every citation points to.
+
+# ============ Office lock files (keep the real docs, ignore the clutter) ============
+~$*
+.~lock.*#
+
+# ============ OS / editors / IDEs ============
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# ============ Logs & temp ============
+*.log
+*.tmp
+*.bak
+tmp/
+temp/

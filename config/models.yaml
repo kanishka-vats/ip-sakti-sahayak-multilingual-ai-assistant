@@ -1,0 +1,36 @@
+models:
+  llm:
+    provider: "groq"
+    name: "qwen/qwen3.8-27b"
+    api_key_env: "GROQ_API_KEY"
+    temperature: 0.1
+    # Groq free tier caps output at ~1000 tokens/min for this model.
+    max_tokens: 1000
+    # Verified live on Groq 2026-09-05 via GET /openai/v1/models.
+    fallback:
+      - "qwen/qwen3.6-27b"
+      - "openai/gpt-oss-20b"
+  embedding:
+    provider: "openrouter"
+    name: "openai/text-embedding-3-small"
+    api_key_env: "OPENROUTER_API_KEY"
+    dimension: 384
+    dimensions_param: 384
+    max_input_tokens: 8191
+    batch_size: 16
+    timeout_s: 60
+    max_retries: 5
+retrieval:
+  top_k: 5
+  # Calibrated 2026-09-05 on text-embedding-3-small/384-d:
+  # relevant queries score 0.81+, unrelated controls ~0.53.
+  confidence_threshold: 0.65
+  dual_top_k: 4
+  min_chunk_tokens: 40
+jurisdictions:
+  - india
+  - international
+guardrails:
+  abstention_message: "Insufficient verified statutory basis found in the indexed corpus to answer this query safely."
+  disclaimer: "Information only; not legal advice. Aligned with DPDP Act & Indian Patent Office rules."
+  max_quote_chars: 600

@@ -1,0 +1,26 @@
+[project]
+name = "sih-project-26045"
+version = "0.1.0"
+description = "IP-SAKTI Sahayak — split-jurisdiction legal/IP RAG (SIH 26045)"
+readme = "README.md"
+authors = [
+    { name = "Kanishka-Vats", email = "kanishkavats479@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "fonttools>=4.64.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pypdf>=6.17.0",
+    "python-dotenv>=1.2.3",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+sih-sahayak = "sih_project_26045:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"

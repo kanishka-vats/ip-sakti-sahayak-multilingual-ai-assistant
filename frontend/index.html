@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IP-SAKTI Sahayak — Legal/IP RAG</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%96%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <!-- Slim icon rail (visible only when sidebar is collapsed, desktop) -->
+  <nav id="rail" aria-label="Collapsed navigation">
+    <button id="rail-toggle" title="Open sidebar"><i data-lucide="panel-left"></i></button>
+    <button id="rail-new" title="New search"><i data-lucide="square-pen"></i></button>
+    <button id="rail-sessions" title="Sessions"><i data-lucide="search"></i></button>
+    <span class="rail-spacer"></span>
+    <span id="rail-avatar">R</span>
+    <button id="rail-logout" title="Logout"><i data-lucide="log-out"></i></button>
+  </nav>
+  <!-- ============ LEFT RAIL ============ -->
+  <aside id="sidebar">
+    <div class="brand-row">
+      <div class="brand" id="brand-home" title="Back to dashboard"><span class="brand-mark">⚖</span><div><h1>IP-SAKTI</h1><p>Sahayak · SIH 26045</p></div></div>
+      <button id="side-close" title="Close sidebar"><i data-lucide="x"></i></button>
+    </div>
+    <button id="new-search"><i data-lucide="plus"></i><span>New Search</span><kbd>⌃K</kbd></button>
+    <div class="side-label">Sessions</div>
+    <div id="history"><p class="empty-hist">No searches yet.</p></div>
+    <div class="side-label">System Metrics</div>
+    <div id="metrics">
+      <div class="metric"><span>Model</span><b id="m-model">…</b></div>
+      <div class="metric"><span>Corpus IN</span><b id="m-india">…</b></div>
+      <div class="metric"><span>Corpus INTL</span><b id="m-intl">…</b></div>
+      <div class="metric"><span>Last answer</span><b id="m-last">—</b></div>
+    </div>
+    <div class="side-foot">
+      <div id="side-profile" title="Rename workspace profile"><span id="side-avatar">R</span><span id="side-name">Researcher</span></div>
+      <button id="logout"><i data-lucide="log-out"></i>Logout</button>
+    </div>
+  </aside>
+
+  <!-- ============ CENTER ============ -->
+  <div id="center">
+    <header id="topbar">
+      <button id="side-toggle" title="Toggle sidebar"><i data-lucide="panel-left"></i></button>
+      <div class="ws-title">IP-SAKTI <span>Sahayak Workspace</span></div>
+      <div id="telemetry"><i data-lucide="activity"></i><span id="tele-text">connecting…</span></div>
+    </header>
+
+    <!-- Landing view (ss1): hero + centered composer -->
+    <div id="view-landing">
+      <div class="hero">
+        <p class="eyebrow">Legal / IP Research</p>
+        <h2>What do you want to know?</h2>
+        <div id="composer-slot-landing"></div>
+      </div>
+    </div>
+
+    <!-- Thread view: conversation + bottom composer -->
+    <main id="view-thread" class="hidden">
+      <div id="thread"></div>
+      <div id="composer-zone">
+        <div id="composer-slot-thread"></div>
+        <div id="legal-foot">Information only; not legal advice.</div>
+      </div>
+    </main>
+
+    <!-- Floating sources card beside the chat (ss5) -->
+    <aside id="sources-panel" class="hidden">
+      <div class="src-head"><span><i data-lucide="book-open-text"></i>Sources</span><button id="src-collapse" title="Collapse sources"><i data-lucide="chevron-down"></i></button></div>
+      <div id="src-list"></div>
+    </aside>
+
+    <!-- Single movable composer: typer row + controls row (ss3) -->
+    <div id="composer" class="hidden">
+      <textarea id="q" rows="2" placeholder="Ask IP-SAKTI"></textarea>
+      <div class="composer-row">
+        <div id="juris-drop">
+          <button id="juris-btn" title="Jurisdiction scope"><i data-lucide="search"></i><span id="juris-label">Auto</span><i data-lucide="chevron-down"></i></button>
+          <div id="juris-menu" class="hidden">
+            <button data-j="auto" data-label="Auto" class="active">Auto<span class="tick">✓</span></button>
+            <button data-j="india" data-label="India">India<span class="tick">✓</span></button>
+            <button data-j="international" data-label="Intl">Intl<span class="tick">✓</span></button>
+          </div>
+        </div>
+        <span class="composer-spacer"></span>
+        <button id="mic" class="icon" title="Voice input"><i data-lucide="mic"></i></button>
+        <button id="send" title="Ask"><i data-lucide="arrow-up"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Share modal -->
+<div id="share-modal" class="hidden">
+  <div class="modal-card">
+    <h2>Share this response <button id="share-close"><i data-lucide="x"></i></button></h2>
+    <div class="share-row">
+      <button id="share-copy-link"><i data-lucide="link"></i>Copy link</button>
+      <button id="share-copy-text"><i data-lucide="clipboard-copy"></i>Copy answer</button>
+      <button id="share-download"><i data-lucide="download"></i>Save .md</button>
+    </div>
+    <p class="share-note">Links reopen this session in this browser. To share with others, use Copy answer or Save .md</p>
+  </div>
+</div>
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>
