@@ -67,3 +67,7 @@ temp/
 
 # =========== Evaluation run artifacts ==========
 eval/results_*.json
+
+
+.agents/
+docs/
