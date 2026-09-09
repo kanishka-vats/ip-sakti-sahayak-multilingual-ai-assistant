@@ -52,12 +52,19 @@ def lexicon_hit(query: str, context_query: str = "") -> bool:
     return bool(SCOPE_PAT.search(combined))
 
 
-async def verify_intent_llm(query: str, context_query: str = "") -> bool | None:
-    """Return True/False, or None when the verifier itself is unavailable."""
+async def verify_intent_llm(query: str, context_query: str = "",
+                            original: str | None = None) -> bool | None:
+    """Return True/False, or None when the verifier itself is unavailable.
+
+    `original` carries the pre-translation text so transliteration slips
+    (e.g. TIDEL for TKDL) can't fool the verdict — the model reads both.
+    """
     s = get_settings()
     if not s.groq_key:
         return None
     user = f"Question: {query}"
+    if original and original.strip() != query.strip():
+        user = f"Original question: {original.strip()}\nEnglish rendering: {query}\n{user}"
     if context_query:
         user = f"Previous question: {context_query}\nFollow-up: {query}\n{user}"
     try:
@@ -99,11 +106,12 @@ async def verify_intent_llm(query: str, context_query: str = "") -> bool | None:
         return None
 
 
-async def check_scope(query: str, context_query: str = "") -> tuple[bool, str]:
+async def check_scope(query: str, context_query: str = "",
+                    original: str | None = None) -> tuple[bool, str]:
     """Return (in_scope, reason). Runs lexicon first, LLM verifier on misses."""
     if lexicon_hit(query, context_query):
         return True, "lexicon"
-    verdict = await verify_intent_llm(query, context_query)
+    verdict = await verify_intent_llm(query, context_query, original)
     if verdict is True:
         return True, "llm-verifier"
     if verdict is False:

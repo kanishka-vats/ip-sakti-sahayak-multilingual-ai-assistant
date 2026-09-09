@@ -12,8 +12,18 @@
    Procedural answers cite EVERY step. `Generator.complete()` enforces this: a draft
    with zero refs triggers one same-model rewrite demanding per-step citations;
    persistent failure falls through to the (always-cited) extractive fallback.
-4. **Zero extrapolation + empathy.** Greetings (no legal substance) get a warm
-   time-aware reply with the user's name (`greetings.py`), never a refusal.
+4. **Zero extrapolation + empathy.** Greetings (no legal substance; app-name
+   mentions ignored, context never consulted) get a warm time-aware reply.
+   Multilingual (`language.py`, first pipeline step): Hindi/Hinglish detected by
+   regex; a deterministic offline glossary bridge translates first (free, immune
+   to LLM throttling); Groq translation only for low-coverage queries. Answers
+    come back in the user's language via reply instruction; the scope verifier
+    sees both original and translation so slips can't cause refusal.
+    Devanagari output is enforced by a script-check retry in `Generator.complete`;
+    explicit markers ("in hindi", "hindi mein") override the reply language even
+    for English queries and are stripped before retrieval.
+   Simple "what is X" questions with one dominant chunk answer directly AND
+   briefly (3-5 sentences, 500-token cap); detail requests stay long-form.
    Typo fixer (`typo_fixer.py`) corrects legal-term
    typos transposition-aware ("tdkl" → TKDL) and always discloses the correction.
    Scope gate (`scope_gate.py`) runs before any retrieval: lexicon fast-path, LLM
@@ -39,10 +49,16 @@
    Store as JSON array in SQLite for Turso/libsql compatibility (no native vec extension required).
 10. **SSE contract:** `POST /api/query` streams `text/event-stream` frames:
     `meta` → `token`* → `citations` → `done` (or `abstain`). Always JSON per frame.
+11. **Agentic layer (additive).** `entities`/`edges` tables live alongside
+    `document_chunks` (never altered). `src/core/agent.py` holds the tool registry
+    (search_case_law, graph_expand, check_tkdl, check_abs), the ReAct loop, and
+    QueryPlanner with sequential hop injection. `mode: auto|agentic|fast` selects
+    the pipeline; guardrails, abstention and response shape are identical either way.
 
 ## API constraints
 - Groq: `https://api.groq.com/openai/v1/chat/completions`, OpenAI-compatible body.
-  Resolve `qwen/qwen3.8-27b` alias → `qwen/qwen3-32b`. Retry fallbacks on 4xx model errors.
+  Primary `qwen/qwen3.8-27b` (verified live), fallbacks from `models.yaml`.
+  Retry fallbacks on 4xx model errors.
 - OpenRouter embeddings: `https://openrouter.ai/api/v1/embeddings`, with
   `Authorization: Bearer <key>`, exponential backoff (5 retries), batch ≤ 32.
 - CORS: `allow_origins=["*"]` for hackathon; restrict to frontend origin in production.

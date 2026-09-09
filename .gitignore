@@ -69,5 +69,5 @@ temp/
 eval/results_*.json
 
 
-.agents/
+.agent/
 docs/

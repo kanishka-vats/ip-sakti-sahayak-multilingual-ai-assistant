@@ -16,6 +16,7 @@ uv run uvicorn src.api.main:app --port 8000
 1. **Just chat** — jurisdiction is auto-routed server-side (India / International / Dual).
    Greetings get a personal reply; off-topic chatter is declined.
 2. **Ask**, then ask follow-ups (`explain it`, `tell me more`) — the previous turn is sent as context.
+   Plain definitions answer briefly; ask for detail when you want depth.
 3. **Edit any query** via the pencil on its bubble — resending branches the chat (later turns are dropped).
 4. **Vague questions** get a clarification with a `Yes, proceed` chip — confirming
    answers best-effort from the retrieved provisions.
@@ -46,7 +47,8 @@ uv run uvicorn src.api.main:app --port 8000
 - `config/models.yaml` — LLM (`groq`, `qwen/qwen3.8-27b`; fallbacks `qwen/qwen3.6-27b`,
   `openai/gpt-oss-20b`; verified live via Groq `/models`), embeddings (OpenRouter
   `openai/text-embedding-3-small`, native 384-d), retrieval `top_k: 5`, threshold `0.65`
-  (calibrated: relevant 0.81+, unrelated ~0.53).
+  (calibrated: relevant 0.81+, unrelated ~0.53). Token budget: 800-char excerpts,
+  800-char history, 800 default / 350 brief / 400 planner caps.
 - `.env` — `GROQ_API_KEY`, `OPENROUTER_API_KEY` (both optional: app runs offline with
   hash embeddings + extractive answers), `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`
   (optional: point at Turso Cloud; default local `db/sih-projdb.db`).

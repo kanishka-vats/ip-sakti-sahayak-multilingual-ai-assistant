@@ -164,6 +164,47 @@ class VectorStore:
         scored.sort(key=lambda s: s.score, reverse=True)
         return scored[:top_k]
 
+    @staticmethod
+    def _row_to_chunk(r: sqlite3.Row, score: float = 0.0) -> ScoredChunk:
+        return ScoredChunk(
+            id=int(r["id"]), score=score, jurisdiction=r["jurisdiction"],
+            source_file=r["source_file"], doc_name=r["doc_name"],
+            doc_type=r["doc_type"], section_id=r["section_id"],
+            chunk_index=int(r["chunk_index"]), text=r["text"])
+
+    def list_chunks(self, jurisdiction: Optional[str] = None,
+                    limit: Optional[int] = None,
+                    offset: int = 0) -> list[dict[str, Any]]:
+        """Raw chunk rows (no embeddings) for batch jobs like graph ingestion."""
+        q = ("SELECT id, jurisdiction, source_file, doc_name, doc_type, "
+             "section_id, chunk_index, text FROM document_chunks")
+        params: list[Any] = []
+        if jurisdiction:
+            q += " WHERE jurisdiction = ?"
+            params.append(jurisdiction)
+        q += " ORDER BY id"
+        if limit is not None:
+            q += " LIMIT ? OFFSET ?"
+            params += [limit, offset]
+        with _connect(self.db_path) as conn:
+            return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+    def get_chunks_by_ids(self, ids: list[int]) -> list[ScoredChunk]:
+        """Fetch chunks by id (score 0.0; caller assigns graph relevance)."""
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        with _connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT id, jurisdiction, source_file, doc_name, doc_type,
+                          section_id, chunk_index, text
+                   FROM document_chunks WHERE id IN ({placeholders})"""
+                .format(placeholders=placeholders), ids).fetchall()
+        order = {i: n for n, i in enumerate(ids)}
+        out = [self._row_to_chunk(r) for r in rows]
+        out.sort(key=lambda c: order.get(c.id, 0))
+        return out
+
     def log_query(self, query: str, jurisdiction: str, model: str,
                   top_score: float, confidence: float, abstained: bool,
                   latency_ms: float) -> int:

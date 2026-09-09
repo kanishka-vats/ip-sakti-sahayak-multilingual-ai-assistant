@@ -12,6 +12,9 @@ class QueryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=4000)
     jurisdiction: Jurisdiction = "auto"
     top_k: int | None = Field(default=None, ge=1, le=20)
+    # Pipeline selection: "fast" = sequential single-hop, "agentic" = planner
+    # + tools, "auto" = deterministic complexity gate decides.
+    mode: Literal["auto", "agentic", "fast"] = "auto"
     # Conversational follow-up support: client sends the previous turn so
     # terse follow-ups ("explain it", "tell me more") resolve correctly.
     context_query: str | None = Field(default=None, max_length=2000)

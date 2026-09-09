@@ -86,10 +86,40 @@ body.side-collapsed #rail{display:flex}
 #side-avatar{width:26px;height:26px;border-radius:999px;background:var(--accent);color:#fff;font-size:12px;
   font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #side-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-spacer{flex:1}
 #logout{display:flex;gap:8px;align-items:center;width:100%;background:transparent;border:0;color:var(--muted);
   border-radius:6px;padding:8px;font-size:13px;cursor:pointer}
 #logout:hover{background:var(--hover);color:var(--text)}
 #logout svg{width:15px;height:15px}
+#theme-toggle{background:none;border:0;color:var(--muted);cursor:pointer;
+  width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#theme-toggle:hover{background:var(--hover);color:var(--accent)}
+#theme-toggle svg{width:15px;height:15px}
+
+/* ---------- light mode (sidebar toggle, persisted) ---------- */
+html.light{
+  --bg:#ffffff; --sidebar:#f2f3f5; --card:#f5f6f8; --border:#ddd;
+  --hover:#e3e5e8; --text:#2e3338; --muted:#888888;
+  --accent:#7b6cd9; --accent-hover:#6a5ac7; --amber:#d97706; --cyan:#06b6d4;
+}
+html.light :focus-visible{box-shadow:0 0 0 2px var(--bg),0 0 0 4px rgba(123,108,217,.5)}
+html.light #composer:focus-within{
+  box-shadow:0 0 0 1px rgba(123,108,217,.25),0 0 20px 3px rgba(123,108,217,.25)}
+html.light .cite{color:#705dcf;background:rgba(123,108,217,.1);border-color:rgba(123,108,217,.45)}
+html.light .cite:hover{background:var(--accent);color:#fff}
+html.light .sugg-chip{color:#705dcf;border-color:var(--accent)}
+html.light .sugg-chip:hover{background:var(--accent);color:#fff}
+html.light .src-num{color:#705dcf;background:rgba(123,108,217,.12);border-color:rgba(123,108,217,.45)}
+html.light .src-verify{color:#705dcf}
+html.light .answer-body pre{background:#eef0f3}
+html.light .conf-line .bar,html.light .src-conf{background:#e3e5e8}
+html.light .actions-row button.voted{color:#705dcf}
+html.light .actions-row button.voted svg{fill:rgba(123,108,217,.3)}
+html.light .typing::after{color:var(--accent)}
+html.light ::-webkit-scrollbar-thumb{background:#c9ccd1}
+html.light .modal-card,html.light #sources-panel{box-shadow:0 16px 48px rgba(0,0,0,.14)}
+html.light .hist-menu{box-shadow:0 8px 24px rgba(0,0,0,.14)}
+html.light .src-card q,html.light .badge.escalate{color:#555b62}
 
 /* ---------- center + topbar ---------- */
 #center{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;position:relative}

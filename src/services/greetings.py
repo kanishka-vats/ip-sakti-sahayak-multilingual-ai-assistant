@@ -27,6 +27,13 @@ PHRASES = re.compile(
 
 _WORD = re.compile(r"[a-z]+")
 
+APPNAME_PAT = re.compile(r"\bip[-\s]?sakti\b|\bipsakti\b|\bsahayak\b", re.IGNORECASE)
+
+
+def strip_appname(text: str) -> str:
+    """Remove assistant-name mentions so 'hello ip-sakti' reads as a greeting."""
+    return re.sub(r"\s{2,}", " ", APPNAME_PAT.sub("", text)).strip(" ,-")
+
 
 def is_greeting(query: str) -> bool:
     """True only for pure small talk: short, no legal substance.
@@ -45,7 +52,19 @@ def is_greeting(query: str) -> bool:
 
 
 def greeting_for(username: str | None = None,
-                 now: datetime.datetime | None = None) -> str:
+                 now: datetime.datetime | None = None,
+                 lang: str = "en") -> str:
+    name = (username or "").strip()
+    if lang == "hi":
+        hello = f"Namaste{name and ', ' + name}!"
+        return (f"{hello} Main aapki kya madad kar sakta hoon?\n\n"
+                "Main aapko patent, trademark, AYUSH aur ABS niyamon, TKDL, "
+                "ya PCT/TRIPS ke baare mein bata sakta hoon — aap kya jaanna chahte hain?")
+    if lang == "hinglish":
+        hello = f"Namaste{name and ', ' + name}!"
+        return (f"{hello} How may I help you today?\n\n"
+                "Main aapko patents, trademarks, AYUSH/ABS compliance, TKDL, "
+                "ya PCT/TRIPS ke baare mein guide kar sakta hoon — bataiye, kya poochna hai?")
     now = now or datetime.datetime.now()
     h = now.hour
     if 5 <= h < 12:
@@ -55,7 +74,7 @@ def greeting_for(username: str | None = None,
     elif 17 <= h < 22:
         daypart = "Good evening"
     else:
-        daypart = "Shubh ratri"
+        daypart = "Hello"
     name = (username or "").strip()
     hello = f"{daypart}, {name}!" if name else f"{daypart}!"
     return (

@@ -55,6 +55,11 @@ def gate(query: str, chunks: list[ScoredChunk], threshold: float | None = None) 
     top = max((c.score for c in chunks), default=0.0)
     conf = confidence_score(chunks, query)
     if not chunks or top < thr:
+        if definition_peak(query, chunks):
+            # Unambiguous definitional match: one chunk dominates and names
+            # the asked term — answer directly instead of abstaining.
+            return GateDecision(abstain=False, confidence=max(conf, top),
+                                top_score=top, reason="definition-peak")
         return GateDecision(abstain=True, confidence=conf, top_score=top,
                             reason=f"max_similarity {top:.3f} < threshold {thr}")
     # Lexical-overlap veto: dense embeddings can rate pure-semantic neighbors
@@ -66,6 +71,46 @@ def gate(query: str, chunks: list[ScoredChunk], threshold: float | None = None) 
         return GateDecision(abstain=True, confidence=conf, top_score=top,
                             reason=f"zero lexical overlap ({ov:.2f}) with top {top:.3f}")
     return GateDecision(abstain=False, confidence=conf, top_score=top, reason="grounded")
+
+
+DEF_PAT = re.compile(
+    r"^(what|who|which|define)\s+(is|are|was|were)\b\s+(.+?)\s*\??$", re.IGNORECASE)
+DEF_STOP = {"the", "a", "an", "of", "in", "under", "law", "indian", "india",
+            "meaning", "definition", "term", "exact", "full", "exact"}
+DETAIL_HINT = re.compile(
+    r"detail|explain|elaborat|comprehensive|everything|in depth|step by step|"
+    r"\bsteps\b|procedure|process|how to|guide|compare|versus", re.IGNORECASE)
+
+
+def definition_term(query: str) -> str | None:
+    """Extract the defined term from 'what is X' style questions."""
+    m = DEF_PAT.match(query.strip())
+    if not m or len(query.strip()) > 120:
+        return None
+    cands = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(3).lower())
+             if w not in DEF_STOP]
+    if not cands:
+        return None
+    return max(cands, key=len)
+
+
+def definition_peak(query: str, chunks: list[ScoredChunk]) -> bool:
+    """True when one chunk unambiguously answers a definitional question:
+    it names the asked term, clears a 0.50 floor, and beats #2 by margin."""
+    term = definition_term(query)
+    if not term or not chunks:
+        return False
+    ranked = sorted(chunks, key=lambda c: c.score, reverse=True)
+    top, second = ranked[0].score, (ranked[1].score if len(ranked) > 1 else 0.0)
+    return (term in ranked[0].text.lower() and top >= 0.50
+            and (top - second) > 0.06)
+
+
+def is_brief_query(query: str) -> bool:
+    """Simple definition questions want short answers — unless the user
+    explicitly asks for depth ('explain in detail', 'steps', ...)."""
+    return (definition_term(query) is not None and len(query.strip()) < 80
+            and not DETAIL_HINT.search(query))
 
 
 def scrub_pii(text: str) -> str:

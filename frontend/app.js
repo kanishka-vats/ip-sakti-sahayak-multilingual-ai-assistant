@@ -359,7 +359,15 @@ function renderChips(turnEl, sugg) {
   box.innerHTML = (sugg || []).map((s) =>
     `<button class="sugg-chip" data-t="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("");
   box.querySelectorAll(".sugg-chip").forEach((b) => {
-    b.onclick = () => send(b.dataset.t);
+    b.onclick = () => {
+      // single-use: consume the row so a second click can't double-fire
+      box.querySelectorAll(".sugg-chip").forEach((x) => {
+        x.disabled = true;
+        x.style.opacity = ".35";
+        x.style.pointerEvents = "none";
+      });
+      send(b.dataset.t);
+    };
   });
 }
 
@@ -722,7 +730,11 @@ $("#logout").onclick = () => {
   store = { sessions: [], activeId: null };
   renderHistory(); newSearch();
 };
-$("#side-profile").onclick = () => renameProfile();
+$("#side-profile").onclick = (e) => {
+  // Any button inside the row (theme icon) handles itself — never rename.
+  if (e.target.closest("button")) return;
+  renameProfile();
+};
 function renameProfile() {
   const cur = localStorage.getItem(LS_PROFILE) || "Researcher";
   const name = prompt("Workspace display name (stored only in this browser):", cur);
@@ -731,6 +743,27 @@ function renameProfile() {
     setProfile();
   }
 }
+/* ---------------- light / dark theme ---------------- */
+function isLight() {
+  return document.documentElement.classList.contains("light");
+}
+function applyTheme() {
+  const light = isLight();
+  try { localStorage.setItem("ipsakti.theme", light ? "light" : "dark"); } catch { /* ignore */ }
+  const btn = $("#theme-toggle");
+  if (btn) {
+    btn.innerHTML = `<i data-lucide="${light ? "moon" : "sun"}"></i>`;
+    btn.title = light ? "Switch to dark mode" : "Switch to light mode";
+    lucide.createIcons();
+  }
+}
+$("#theme-toggle").onclick = (e) => {
+  // Stop here: must never bubble to the rename handler on the row.
+  e.stopPropagation();
+  e.preventDefault();
+  document.documentElement.classList.toggle("light");
+  applyTheme();
+};
 function setProfile() {
   const name = localStorage.getItem(LS_PROFILE) || "Researcher";
   const initial = (name[0] || "R").toUpperCase();
@@ -741,6 +774,7 @@ function setProfile() {
 /* ---------------- boot ---------------- */
 loadStore();
 setProfile();
+applyTheme();
 setupMic();
 refreshTelemetry();
 lucide.createIcons();

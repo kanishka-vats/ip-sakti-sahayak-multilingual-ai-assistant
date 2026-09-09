@@ -41,6 +41,24 @@ STRICT RULES:
 REF_PAT = None  # compiled lazily in count_refs to keep import light
 
 
+DEVANAGARI_PAT = None  # lazy, mirrors count_refs pattern
+
+
+def matches_script(text: str, lang: str) -> bool:
+    """True if the answer is actually written in the requested script.
+
+    Only Hindi is strictly enforceable (Devanagari presence). Hinglish and
+    English share Latin script, so they always pass here.
+    """
+    global DEVANAGARI_PAT
+    if lang != "hi":
+        return True
+    if DEVANAGARI_PAT is None:
+        import re as _re
+        DEVANAGARI_PAT = _re.compile(r"[\u0900-\u097F]")
+    return bool(DEVANAGARI_PAT.search(text or ""))
+
+
 def count_refs(text: str) -> int:
     """Number of distinct inline [^N] citations in a draft answer."""
     global REF_PAT
@@ -63,12 +81,12 @@ REWRITE_INSTRUCTION = (
 
 
 def build_messages(query: str, excerpts: list[dict[str, Any]], jurisdiction: str,
-                   history: str = "") -> list[dict[str, str]]:
+                   history: str = "", reply_lang: str = "en") -> list[dict[str, str]]:
     ctx_lines = []
     for i, e in enumerate(excerpts, 1):
         ctx_lines.append(
             f"[{i}] {e.get('act_name','')} — {e.get('section','')} "
-            f"({e.get('source_file','')}):\n{e.get('text','')[:2000]}"
+            f"({e.get('source_file','')}):\n{e.get('text','')[:800]}"
         )
     context = "\n\n".join(ctx_lines) if ctx_lines else "(no excerpts)"
     user = (
@@ -78,6 +96,12 @@ def build_messages(query: str, excerpts: list[dict[str, Any]], jurisdiction: str
     )
     if history:
         user = f"Conversation so far:\n{history}\n\n{user}"
+    if reply_lang == "hi":
+        user = ("IMPORTANT: Reply in Hindi using Devanagari script "
+                "(citations stay as [^N]).\n\n" + user)
+    elif reply_lang == "hinglish":
+        user = ("IMPORTANT: Reply in Hinglish (Hindi written in Latin/Roman "
+                "script; citations stay as [^N]).\n\n" + user)
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
@@ -109,12 +133,13 @@ class Generator:
         return "\n".join(lines)
 
     async def _chat(self, client: httpx.AsyncClient, model: str,
-                    messages: list[dict[str, str]], stream: bool) -> httpx.Response:
+                    messages: list[dict[str, str]], stream: bool,
+                    max_tokens: int | None = None) -> httpx.Response:
         resp = await client.post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
             json={"model": model, "messages": messages, "temperature": self.temperature,
-                  "max_tokens": self.max_tokens, "stream": stream},
+                  "max_tokens": max_tokens or self.max_tokens, "stream": stream},
             timeout=90.0,
         )
         if resp.status_code in (400, 404) and "model" in resp.text.lower():
@@ -123,8 +148,15 @@ class Generator:
         return resp
 
     async def complete(self, query: str, excerpts: list[dict[str, Any]],
-                       jurisdiction: str = "dual", history: str = "") -> str:
-        messages = build_messages(query, excerpts, jurisdiction, history)
+                       jurisdiction: str = "dual", history: str = "",
+                       brief: bool = False, reply_lang: str = "en") -> str:
+        messages = build_messages(query, excerpts, jurisdiction, history,
+                                  reply_lang=reply_lang)
+        if brief:
+            messages[1]["content"] += (
+                "\nKeep this answer SHORT: a direct definition in 3-5 sentences "
+                "with inline [^N] citations. At most one heading, no tables.")
+        cap = 350 if brief else None
         if self.offline:
             return self._offline_answer(query, excerpts)
         async with httpx.AsyncClient() as client:
@@ -132,7 +164,8 @@ class Generator:
             last: Exception | None = None
             for m in models:
                 try:
-                    resp = await self._chat(client, m, messages, stream=False)
+                    resp = await self._chat(client, m, messages, stream=False,
+                                            max_tokens=cap)
                     raw = resp.json()["choices"][0]["message"]["content"] or ""
                     clean = strip_thinking(raw)
                     if not clean and raw.strip():
@@ -150,6 +183,26 @@ class Generator:
                         continue
                     if "INSUFFICIENT_BASIS" in clean or not excerpts:
                         return clean
+                    if reply_lang == "hi" and not matches_script(clean, "hi"):
+                        # Script enforcement: model answered in Latin script
+                        # despite the Devanagari instruction. One firm retry.
+                        print(f"[generator] wrong script from {m}; devanagari retry.")
+                        retry_dev = [messages[0], {
+                            "role": "user",
+                            "content": messages[1]["content"] + (
+                                "\nCRITICAL: Your previous reply used Latin/Roman script. "
+                                "Rewrite the ENTIRE answer in Devanagari script. Every Hindi "
+                                "word must be in Devanagari — no Roman Hindi. Only [^N] "
+                                "markers and URLs stay Latin.")}]
+                        resp_dev = await self._chat(client, m, retry_dev, stream=False)
+                        raw_dev = resp_dev.json()["choices"][0]["message"]["content"] or ""
+                        clean_dev = strip_thinking(raw_dev)
+                        if clean_dev and "INSUFFICIENT_BASIS" not in clean_dev \
+                                and matches_script(clean_dev, "hi"):
+                            clean = clean_dev
+                        # else: keep the Hinglish draft — a cited answer in the
+                        # wrong script still beats no answer; loop continues to
+                        # citation check below.
                     if count_refs(clean) == 0:
                         # Citation-compliance retry: procedural/multi-step drafts
                         # sometimes synthesize uncited prose. Demand a rewrite
@@ -179,7 +232,8 @@ class Generator:
             print(f"[generator] all Groq models failed ({last}); extractive fallback.")
             return self._offline_answer(query, excerpts)
 
-    async def clarify(self, query: str, sketches: list[str]) -> str | None:
+    async def clarify(self, query: str, sketches: list[str],
+                      reply_lang: str = "en") -> str | None:
         """Empathetic clarification for vague-but-in-scope questions.
 
         Returns markdown (or None when the LLM is unusable — caller falls back
@@ -197,6 +251,11 @@ class Generator:
             "or specify which track they mean. Plain markdown, no citations, "
             "no disclaimers."
         )
+        if reply_lang == "hi":
+            user = "IMPORTANT: Reply in Hindi using Devanagari script.\n\n" + user
+        elif reply_lang == "hinglish":
+            user = ("IMPORTANT: Reply in Hinglish (Hindi written in Latin/Roman "
+                    "script).\n\n" + user)
         messages = [
             {"role": "system",
              "content": "You are an empathetic legal research assistant. Be warm and "
@@ -209,7 +268,8 @@ class Generator:
         async with httpx.AsyncClient() as client:
             for m in [self.model, *self.fallbacks]:
                 try:
-                    resp = await self._chat(client, m, messages, stream=False)
+                    resp = await self._chat(client, m, messages, stream=False,
+                                            max_tokens=300)
                     raw = resp.json()["choices"][0]["message"]["content"] or ""
                     clean = strip_thinking(raw)
                     if clean:

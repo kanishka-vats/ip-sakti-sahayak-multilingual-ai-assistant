@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     llm_provider: str = "groq"
     llm_model: str = "qwen/qwen3-32b"
     llm_temperature: float = 0.1
-    llm_max_tokens: int = 1000
+    llm_max_tokens: int = 800
     llm_fallbacks: list[str] = Field(default_factory=list)
     embedding_provider: str = "openrouter"
     embedding_model: str = "openai/text-embedding-3-small"

@@ -3,7 +3,7 @@
 Base: `http://localhost:8000` · Frontend served at `/` · OpenAPI at `/docs`.
 
 ## POST /api/query — single-shot grounded answer
-Req: `{query: string(2..4000), jurisdiction: "india"|"international"|"dual"|"auto" (default "auto" — server keyword-routes), top_k?: 1..20, context_query?: string, context_answer?: string}`
+Req: `{query: string(2..4000), jurisdiction: "india"|"international"|"dual"|"auto" (default "auto" — server keyword-routes), top_k?: 1..20, context_query?: string, context_answer?: string, mode?: "auto"|"agentic"|"fast" (default "auto")}`
 Terse follow-ups ("explain it") are expanded server-side with `context_query` for
 retrieval, and the prior turn is passed to the generator as history.
 Res `QueryResponse`: `{answer, citations[{index, chunk_id, act_name, section, doc_type, source_file, confidence, quote (≤320 chars, sentence-cut), source_label, verify_url, verify_label}], confidence, top_score, jurisdiction, abstained, abs_flag, tkdl_flag, model, clarification: bool, suggestions: string[]}`
@@ -11,6 +11,9 @@ Answers carry NO disclaimer header — the frontend shows a persistent small-pri
 Legal-term typos are auto-corrected (disclosed inline). Vague-but-in-scope queries
 receive an empathetic clarification (`clarification: true`) with quick-reply
 `suggestions` (e.g. "Yes, proceed"); confirming adopts the prior question.
+`mode: "agentic"` (or auto-routed multi-domain questions) runs the planner +
+tool loop (`src/core/agent.py`); response shape, citations and abstention
+semantics are identical to the fast pipeline.
 
 ## POST /api/query/stream — SSE (primary UI path)
 Same request body. `Content-Type: text/event-stream` frames:

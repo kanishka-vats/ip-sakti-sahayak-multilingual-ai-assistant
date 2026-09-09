@@ -20,13 +20,15 @@ from src.api.schemas import (
     QueryResponse,
 )
 from src.core import guardrails
+from src.core.agent import AgentExecutor, needs_agent, to_scored
 from src.core.generator import Generator, build_messages
 from src.core.retriever import Retriever
 from src.core.vector_store import VectorStore
 from src.services.abs_compliance import analyze_abs
 from src.services.citation_links import clean_label, verify_link
-from src.services.greetings import greeting_for, is_greeting
+from src.services.greetings import greeting_for, is_greeting, strip_appname
 from src.services.jurisdiction_router import jurisdiction_frame, route_jurisdiction
+from src.services.language import detect_language, keyword_bridge, split_reply_override, to_english
 from src.services.scope_gate import OUT_OF_SCOPE_MESSAGE, check_scope, lexicon_hit
 from src.services.tkdl_checker import check_tkdl
 from src.services.typo_fixer import correct_typos, correction_note
@@ -57,7 +59,7 @@ def _expand_followup(query: str, ctx_q: str, ctx_a: str) -> tuple[str, str]:
     if ctx_q:
         history = f"Previous question: {ctx_q}"
         if ctx_a:
-            history += f"\nPrevious answer (grounded summary): {ctx_a[:1500]}"
+            history += f"\nPrevious answer (grounded summary): {ctx_a[:800]}"
     if ctx_q and (len(q) < 50 or FOLLOWUP_PAT.search(q)):
         retrieval_query = f"{ctx_q} — {q}. Explain in full detail."
     else:
@@ -68,7 +70,8 @@ def _expand_followup(query: str, ctx_q: str, ctx_a: str) -> tuple[str, str]:
 # Confirmation replies that accept the assistant's stated interpretation.
 CONFIRM_PAT = re.compile(
     r"^(yes|yeah|yep|yup|correct|right|proceed|go ahead|sure|ok|okay|confirm|"
-    r"please proceed|do it)[\s,!.]*(proceed|please|go ahead|do it|continue)?[\s,!.]*$",
+    r"please proceed|do it|haan|han|ji haan|aage badho|jaari rakho)"
+    r"[\s,!.]*(proceed|please|go ahead|do it|continue)?[\s,!.]*$",
     re.IGNORECASE)
 
 # Near-miss band: gate failed but retrieval is close enough that a
@@ -110,20 +113,120 @@ def _needs_escalation(query: str, abs_flag, tkdl_flag, confidence: float) -> str
     return None
 
 
+async def _answer_agentic(req: QueryRequest, query: str, ctx_q: str,
+                        ctx_a: str, jurisdiction: str, correction_md: str,
+                        t0: float, reply_lang: str = "en") -> dict:
+    """Agentic path: planner + tools + synthesis, same guardrails as fast.
+
+    Citations, abstention message, confidence math and response shape are
+    identical to the sequential pipeline; only the reasoning is agentic.
+    """
+    from src.services.abs_compliance import analyze_abs
+    from src.services.tkdl_checker import check_tkdl
+
+    s = get_settings()
+    history = f"Previous question: {ctx_q}\nPrevious answer: {ctx_a[:800]}" if ctx_q else ""
+    try:
+        res = await AgentExecutor().run(query, jurisdiction, history,
+                                          reply_lang=reply_lang)
+    except Exception as exc:
+        # Agent stack must never 500 a query: fall back to abstention.
+        print(f"[agent] executor failed: {exc}")
+        res = None
+    store = VectorStore(s.db_path_abs)
+    store.init()
+    latency_ms = (time.perf_counter() - t0) * 1000
+    if res is None or not res.citations:
+        store.log_query(req.query, jurisdiction, s.llm_model, 0.0, 0.0,
+                        True, latency_ms)
+        return {
+            "answer": correction_md + s.abstention_message,
+            "citations": [], "confidence": 0.0,
+            "top_score": 0.0, "jurisdiction": jurisdiction,
+            "abstained": True, "abs_flag": analyze_abs(query),
+            "tkdl_flag": check_tkdl(query), "model": s.llm_model,
+            "escalation_hint": "Agentic run found no citable basis.",
+            "suggestions": [], "clarification": False,
+        }
+    scored = to_scored(res.citations)
+    gate = guardrails.gate(query, scored)
+    citations = []
+    for i, c in enumerate(res.citations, 1):
+        d = dict(c)
+        d["index"] = i
+        citations.append(d)
+    if gate.abstain or res.abstained:
+        store.log_query(req.query, jurisdiction, s.llm_model, gate.top_score,
+                        gate.confidence, True, latency_ms)
+        return {
+            "answer": correction_md + s.abstention_message,
+            "citations": citations, "confidence": gate.confidence,
+            "top_score": gate.top_score, "jurisdiction": jurisdiction,
+            "abstained": True,
+            "abs_flag": res.abs_flag or analyze_abs(query),
+            "tkdl_flag": res.tkdl_flag or check_tkdl(query),
+            "model": s.llm_model,
+            "escalation_hint": "Agentic run found no citable basis.",
+            "suggestions": [], "clarification": False,
+        }
+    answer = guardrails.scrub_pii(res.answer)
+    if guardrails.verify_citations(answer, len(citations)) or not answer.strip():
+        # Final citation-compliance net: never ship uncited agent prose.
+        gen = Generator()
+        answer = gen._offline_answer(query, [{
+            "act_name": c.get("act_name", ""), "section": c.get("section", ""),
+            "source_file": c.get("source_file", ""),
+            "text": c.get("excerpt") or c.get("quote") or "",
+        } for c in citations[:5]])
+    store.log_query(req.query, jurisdiction, s.llm_model, gate.top_score,
+                    gate.confidence, False, latency_ms)
+    return {
+        "answer": correction_md + answer, "citations": citations,
+        "confidence": gate.confidence, "top_score": gate.top_score,
+        "jurisdiction": jurisdiction, "abstained": False,
+        "abs_flag": res.abs_flag or analyze_abs(query),
+        "tkdl_flag": res.tkdl_flag or check_tkdl(query),
+        "model": s.llm_model,
+        "escalation_hint": _needs_escalation(req.query, res.abs_flag,
+                                             res.tkdl_flag, gate.confidence),
+        "suggestions": [], "clarification": False,
+    }
+
+
 async def _answer_pipeline(req: QueryRequest) -> dict:
     s = get_settings()
     t0 = time.perf_counter()
     ctx_q = (req.context_query or "").strip()
-    # -1. Pure greetings get warmth + a name, never the scope refusal —
-    # but only when there is no legal substance (lexicon decides that).
-    if is_greeting(req.query) and not lexicon_hit(req.query, ctx_q):
+    # -2. Multilingual layer: detect Hindi/Hinglish once, translate for the
+    # whole pipeline, answer back in the user's language. English costs nothing.
+    # An explicit marker ("in hindi", "hindi mein") overrides the reply language
+    # even for English queries, and is stripped before retrieval.
+    query_nolang, override = split_reply_override(req.query)
+    lang = detect_language(query_nolang)
+    work_query = query_nolang
+    if lang in ("hi", "hinglish"):
+        # Glossary bridge first: free, deterministic, retrieval-optimal, and
+        # immune to LLM throttling. Groq translation only for hard cases.
+        bridged, coverage = keyword_bridge(query_nolang)
+        if coverage >= 0.5:
+            work_query = bridged
+        else:
+            translated = await to_english(query_nolang, lang)
+            if translated:
+                work_query = translated
+    reply_lang = override or lang
+    # -1. Pure greetings get warmth + a name, never the scope refusal.
+    # App-name mentions don't count as substance ("hello ip-sakti"), and a
+    # greeting stays a greeting regardless of conversation context.
+    bare = strip_appname(work_query)
+    if is_greeting(bare) and not lexicon_hit(bare, ""):
         latency_ms = (time.perf_counter() - t0) * 1000
         store = VectorStore(s.db_path_abs)
         store.init()
         store.log_query(req.query, req.jurisdiction, s.llm_model, 1.0, 1.0,
                         False, latency_ms)
         return {
-            "answer": greeting_for(req.username),
+            "answer": greeting_for(req.username, lang=reply_lang),
             "citations": [], "confidence": 1.0,
             "top_score": 1.0, "jurisdiction": req.jurisdiction,
             "abstained": False, "abs_flag": None, "tkdl_flag": None,
@@ -135,15 +238,17 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
         }
     # 0. Typo empathy: correct legal-term typos ("tdkl" -> "TKDL") for all
     # downstream steps; the correction is always disclosed in the answer.
-    fixed_query, corrections = correct_typos(req.query.strip())
+    fixed_query, corrections = correct_typos(work_query.strip())
     correction_md = correction_note(corrections)
     # A confirmation ("yes, proceed") adopts the previous question wholesale:
     # retrieval, routing and flags all run on it, not on the two-word reply.
-    is_confirm = bool(ctx_q) and bool(CONFIRM_PAT.match(req.query.strip()))
+    is_confirm = bool(ctx_q) and bool(CONFIRM_PAT.match(work_query.strip()))
     q_eff = ctx_q if is_confirm else fixed_query
     # 1. Scope gate on the effective query: out-of-domain intent (memes,
     # trivia, chit-chat) never spends embedding/retrieval budget.
-    in_scope, scope_reason = await check_scope(q_eff, "" if is_confirm else ctx_q)
+    in_scope, scope_reason = await check_scope(
+        q_eff, "" if is_confirm else ctx_q,
+        original=req.query if work_query != req.query else None)
     if not in_scope:
         latency_ms = (time.perf_counter() - t0) * 1000
         store = VectorStore(s.db_path_abs)
@@ -160,11 +265,20 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
             "suggestions": [], "clarification": False,
         }
     jurisdiction = route_jurisdiction(q_eff, req.jurisdiction)
+    # Abstraction layer (Phase 3): complex queries go agentic, everything
+    # else stays on the untouched fast sequential pipeline below.
+    use_agent = req.mode == "agentic" or (
+        req.mode == "auto" and needs_agent(fixed_query, ctx_q))
+    if use_agent:
+        return await _answer_agentic(req, q_eff, ctx_q,
+                                     (req.context_answer or "").strip(),
+                                     jurisdiction, correction_md, t0,
+                                     reply_lang=reply_lang)
     if is_confirm:
         retrieval_query = (f"{ctx_q}. Provide a full detailed answer covering "
                            "all relevant provisions.")
         history = (f"Previous question: {ctx_q}\nPrevious answer (grounded summary): "
-                   f"{(req.context_answer or '').strip()[:1500]}")
+                   f"{(req.context_answer or '').strip()[:800]}")
     else:
         retrieval_query, history = _expand_followup(
             fixed_query, ctx_q, (req.context_answer or "").strip())
@@ -236,7 +350,7 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
             # Vague-but-in-scope: empathetic clarification, not a wall.
             sketches = [f"{c['act_name']} — {c['section']}: {c['quote'][:220]}"
                         for c in citations[:5]]
-            clar = await gen.clarify(fixed_query, sketches)
+            clar = await gen.clarify(fixed_query, sketches, reply_lang=reply_lang)
             if not clar:
                 clar, _ = _template_clarification(fixed_query, citations)
             store.log_query(req.query, jurisdiction, s.llm_model, top_score,
@@ -260,7 +374,9 @@ async def _answer_pipeline(req: QueryRequest) -> dict:
     display_query = q_eff if retrieval_query.startswith(q_eff) else (
         f"{q_eff} (context: {ctx_q})")
     full_query = f"{frame}\n{display_query}"
-    answer = await gen.complete(full_query, excerpts, jurisdiction, history=history)
+    answer = await gen.complete(full_query, excerpts, jurisdiction,
+                                history=history, reply_lang=reply_lang,
+                                brief=guardrails.is_brief_query(fixed_query))
     answer = guardrails.scrub_pii(answer)
     if "INSUFFICIENT_BASIS" in answer:
         if not gate.abstain:
@@ -389,3 +505,4 @@ async def post_feedback(req: FeedbackRequest):
     store.init()
     fid = store.log_feedback(req.session_id, req.query, req.rating, s.llm_model)
     return FeedbackResponse(feedback_id=fid)
+
